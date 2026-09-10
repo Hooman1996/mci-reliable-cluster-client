@@ -121,8 +121,9 @@ implementation evidence justifies a change.
 
 ## Mandatory final repository requirements
 
-Stage 2 delivers D-01. Dependency locking was attempted but registry resolution was
-unavailable, so D-02 and the later delivery artifacts remain open:
+Stage 3 delivers D-01 plus the final README and one-shot CLI needed by later image
+work. Dependency locking was attempted but registry resolution was unavailable, so
+D-02 and the remaining delivery artifacts stay open:
 
 - **D-01 — Delivered:** Production client implementation and comprehensive unit
   test suite.
@@ -132,7 +133,7 @@ unavailable, so D-02 and the later delivery artifacts remain open:
 - **D-04:** Basic Kubernetes manifests appropriate to that executable.
 - **D-05:** GitHub Actions CI running format check, lint, mypy, unit tests, and
   coverage from a clean dependency installation.
-- **D-06:** Final README with runnable installation and usage instructions.
+- **D-06 — Delivered:** Final README with runnable library and CLI instructions.
 
 ## Working assumptions
 
@@ -153,8 +154,8 @@ unavailable, so D-02 and the later delivery artifacts remain open:
 - No independent actor mutates the same `group_id` during one client operation.
   The client can serialize same-process calls, but the API supplies no mechanism
   to enforce this assumption across processes.
-- A minimal one-shot CLI is expected later so a container can execute the library;
-  Kubernetes should model it as a `Job`, not invent a long-running API service.
+- The one-shot CLI is the future container entrypoint; Kubernetes should model it as
+  a `Job`, not invent a long-running API service.
 
 ## Unresolved specification ambiguities
 

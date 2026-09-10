@@ -12,6 +12,9 @@ dependencies = [
     "httpx>=0.27,<1",
 ]
 
+[project.scripts]
+mci-cluster = "mci_cluster_client.cli:entrypoint"
+
 [dependency-groups]
 dev = [
     "mypy>=1.11,<3",

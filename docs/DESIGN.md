@@ -2,9 +2,9 @@
 
 ## Status
 
-This design describes the implemented synchronous Python client of the supplied
-REST API. It does not implement the cluster service and does not claim distributed
-ACID guarantees.
+This design describes the implemented synchronous Python client and its thin
+one-shot CLI for the supplied REST API. It does not implement the cluster service
+and does not claim distributed ACID guarantees.
 
 ## Public API proposal
 
@@ -42,6 +42,7 @@ client; a supplied client remains caller-owned.
 | Retry/reconciliation policy | Bound GET probes, calculate exponential backoff and jitter through injected functions | Resend ambiguous mutations by default |
 | Saga journal | Accumulate immutable/serializable per-node evidence and ownership | Infer ownership from existence alone |
 | Result/exception model | Expose machine-readable success, failure, rollback, and indeterminate details | Replace the original failure with a rollback error |
+| CLI | Resolve process configuration, call `ClusterClient` once, serialize its report, and select an exit code | Reimplement transaction, retry, reconciliation, or compensation policy |
 
 `httpx` is the planned HTTP implementation, but orchestration depends on a small
 transport protocol so tests can script exact responses and exceptions.
@@ -187,6 +188,27 @@ sanitized status and exception category; callers do not need to parse messages.
 Validation failures that occur before a journal exists contain field-level details
 and no secret-bearing values.
 
+## Command-line contract
+
+The installed `mci-cluster` command and `python -m mci_cluster_client` share
+`main(argv: Sequence[str] | None = None) -> int`. The `create` and `delete`
+subcommands require a group ID and at least one node. Repeatable `--node` values take
+complete precedence over the comma-separated `MCI_CLUSTER_NODES` fallback; the two
+sources are not merged. Empty environment items are invalid.
+
+The CLI constructs `TimeoutConfig` and `RetryPolicy` directly, so their existing
+finite/range validation runs before client construction or network access. It uses
+`ClusterClient` as a context manager and dispatches exactly one operation. A report
+is emitted once to stdout as compact JSON, or indented JSON with `--pretty`; logs
+and safe diagnostics use stderr. The CLI does not expose authentication, headers,
+tokens, response bodies, or tracebacks for expected failures.
+
+`ExitCode` defines the process contract: `0` for success/no-op, `2` for syntax or
+configuration/validation errors, `3` for a known failed operation with complete
+rollback, `4` for indeterminate state or incomplete/failed compensation, and `130`
+for Ctrl+C. `ClusterOperationError` uses its existing report as the sole structured
+error format. Unexpected programming errors remain visible to the caller.
+
 ## Retry policy
 
 Defaults are three total GET attempts, 0.1-second base delay, 1-second delay cap,
@@ -251,9 +273,8 @@ secrets.
 
 ## Later delivery design
 
-Implementation will use a `src/` package and a small one-shot CLI. The Docker image
-will execute that CLI as a non-root user. Kubernetes manifests should use a Job with
-node/action/group configuration and Secret references, not an invented service.
+The implemented `src/` package includes the one-shot CLI. The future Docker image
+will execute `mci-cluster` as a non-root user. Kubernetes manifests should use a Job
+with node/action/group configuration and Secret references, not an invented service.
 GitHub Actions will install from the declared lock in a clean environment and run
-the five repository quality commands. These artifacts are deliberately deferred
-from this phase.
+the five repository quality commands. Those delivery artifacts remain deferred.

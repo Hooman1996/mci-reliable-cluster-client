@@ -1,5 +1,7 @@
 """Public API for the MCI reliable cluster client."""
 
+__version__ = "0.1.0"
+
 from .client import ClusterClient
 from .exceptions import (
     ClientClosedError,
@@ -42,4 +44,5 @@ __all__ = [
     "TimeoutConfig",
     "TransitionOwnership",
     "ValidationError",
+    "__version__",
 ]

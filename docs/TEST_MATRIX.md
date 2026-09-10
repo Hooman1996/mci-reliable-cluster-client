@@ -18,7 +18,7 @@ is explicitly marked as a later delivery check.
 | M-01 client creates on every node | `test_all_absent_create_succeeds_on_every_node_with_exact_contract` | GET all, POST each, complete per-node success report |
 | M-01 client deletes on every node | `test_all_present_delete_succeeds_on_every_node_with_exact_contract` | GET all, DELETE each, complete per-node success report |
 | M-02 unstable API and rollback | `test_middle_node_failure_rolls_create_back_in_reverse_order`, `test_delete_failure_recreates_only_changed_node` | failure stops forward work and restores attributable changes |
-| M-03 / D-06 README assumptions and usage | submission audit | README documents runnable API, assumptions, and limitations |
+| M-03 / D-06 README assumptions and usage | submission audit | README documents runnable library/CLI usage, assumptions, and limitations |
 | M-04 / R-16 no live services | autouse `block_real_network`, `ScriptedTransport.assert_done` | sockets fail immediately and every expected request is scripted |
 | M-05 Git repository | submission audit | repository metadata exists; remote publication remains authorization-dependent |
 | M-06 / D-03 executable image | later `test_container_metadata_and_cli_contract` plus static Docker audit | declared entrypoint invokes the client CLI without secrets/root |
@@ -60,6 +60,11 @@ is explicitly marked as a later delivery check.
 | URL path injection | `test_group_id_is_percent_encoded_as_one_get_path_segment` | reserved characters cannot alter endpoint structure |
 | Redirect/security behavior | `test_redirect_is_not_followed_and_is_reconciled` plus constructor inspection | mutation not forwarded; internally created httpx client retains TLS verification default |
 | D-01 package behavior | all unit tests above | implementation satisfies documented public contract |
+| CLI dispatch and node sources | `test_create_dispatches_with_repeated_nodes_and_compact_json`, `test_delete_dispatches_and_pretty_prints`, environment fallback/override tests | action and stable node order reach the client; CLI nodes replace, rather than merge with, environment nodes |
+| CLI numeric configuration | `test_every_numeric_option_reaches_existing_configuration_models`, `test_invalid_numeric_configuration_fails_before_client_execution` | every timeout/retry option uses the public models and invalid values prevent execution |
+| CLI output and status mapping | compact/pretty, success/no-op, rolled-back, indeterminate, and rollback-failure tests in `test_cli.py` | exactly one JSON report uses stable enum strings on stdout; diagnostics use stderr; exit is `0`, `3`, or `4` from actual report state |
+| CLI expected local failures | missing/malformed nodes, validation, argparse, and KeyboardInterrupt tests in `test_cli.py` | no report or traceback; stable exit `2` or `130`; no client/network call when configuration is invalid |
+| CLI execution methods/lifecycle | help/version tests, `test_execute_uses_context_manager_and_dispatches`, entrypoint tests, module smoke commands | installed and module entrypoints share the parser; client context always exits |
 | D-02 dependency reproducibility | pending successful `uv lock` verification | registry resolution was unavailable in Stage 2; clean install is deferred to CI stage |
 | Repository cleanliness | audit plus CI ignore check | no `.venv`, caches, credentials, build output, or modified references |
 
