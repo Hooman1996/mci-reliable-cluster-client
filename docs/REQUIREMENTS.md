@@ -65,10 +65,11 @@ implementation evidence justifies a change.
 - **R-03 — Preflight:** GET every node before mutation and record whether the group
   was initially present, absent, or unknown. Any unknown preflight state prevents
   mutation.
-- **R-04 — Initial consistency:** For create, all-absent may proceed and all-present
-  is an idempotent no-op. For delete, all-present may proceed and all-absent is an
-  idempotent no-op. A mixed present/absent initial state is a conflict and causes no
-  mutation.
+- **R-04 — Safe convergence:** For create, mutate only initially absent nodes and
+  leave initially present nodes unchanged; all-present is an idempotent no-op. For
+  delete, mutate only initially present nodes and leave initially absent nodes
+  unchanged; all-absent is an idempotent no-op. Mixed state is valid input and must
+  converge in stable node order.
 - **R-05 — Per-node journal:** Record each node's normalized URL, initial state,
   preflight evidence, mutation result, reconciliation result, ownership decision,
   compensation result, attempt counts, safe error information, and best-known
@@ -82,22 +83,25 @@ implementation evidence justifies a change.
   `404` means absent; wrong IDs, malformed JSON/schema, other statuses, or exhausted
   failures mean unknown.
 - **R-08 — Compensation ownership:** Never delete during create rollback merely
-  because the group exists. Delete only when the node was initially absent and the
-  current operation's create was confirmed or safely inferred. Likewise, recreate
-  during delete rollback only when the node was initially present and this
-  operation's delete was confirmed or safely inferred. Never compensate unknown,
-  unattempted, or pre-existing state.
+  because the group exists. Delete only when the node was initially absent and this
+  operation dispatched create; normally the transition is confirmed or safely
+  inferred. Likewise, recreate during delete rollback only when the node was
+  initially present and this operation dispatched delete. If reconciliation stays
+  unknown, one inverse request is the safest restoration attempt under the explicit
+  no-concurrent-same-group-writer assumption. Never compensate an unchanged,
+  unattempted, or pre-existing state, and never claim restoration without evidence.
 - **R-09 — Reverse rollback:** After a forward failure, stop new mutations and
   compensate attributable changes in reverse mutation order.
 - **R-10 — Failure preservation:** Preserve the original forward failure as the
   primary cause. Report compensation failures separately without masking it.
 - **R-11 — Idempotent calls:** Repeated create after global success returns a
   successful no-op; repeated delete after global success returns a successful
-  no-op. A repeat following incomplete rollback is governed by fresh preflight and
-  may surface a mixed-state conflict rather than guessing ownership.
+  no-op. A repeat following incomplete rollback uses fresh preflight and safely
+  converges only nodes that still differ from the requested state; it never reuses
+  historical ownership.
 - **R-12 — Bounds:** Every HTTP request has explicit connect/read/write/pool
-  timeouts. Read retries and reconciliation probes have finite attempt and elapsed
-  budgets with exponential backoff and jitter.
+  timeouts. Read retries and reconciliation probes have a finite attempt count and
+  bounded exponential backoff with optional bounded jitter.
 - **R-13 — Retry selection:** Retry GET operations by default. Retry other
   operations only if the server contract establishes idempotency. Because the
   supplied API provides no idempotency key or conditional mutation, POST and DELETE
@@ -117,12 +121,13 @@ implementation evidence justifies a change.
 
 ## Mandatory final repository requirements
 
-These are required before final submission but intentionally not implemented in
-this specification/bootstrap phase:
+Stage 2 delivers D-01. Dependency locking was attempted but registry resolution was
+unavailable, so D-02 and the later delivery artifacts remain open:
 
-- **D-01:** Production client implementation and complete unit test suite.
-- **D-02:** A reproducible `uv.lock` generated from all dependencies declared in
-  `pyproject.toml`, without syncing the shared `faq` environment.
+- **D-01 — Delivered:** Production client implementation and comprehensive unit
+  test suite.
+- **D-02 — Pending:** Generate a reproducible `uv.lock` from all dependencies
+  declared in `pyproject.toml`, without syncing the shared `faq` environment.
 - **D-03:** Dockerfile/Containerfile with useful executable behavior.
 - **D-04:** Basic Kubernetes manifests appropriate to that executable.
 - **D-05:** GitHub Actions CI running format check, lint, mypy, unit tests, and
@@ -135,9 +140,10 @@ this specification/bootstrap phase:
   `http` and `https` are accepted. User information, query strings, fragments, and
   non-root base paths are rejected; trailing slashes and default ports are
   canonicalized before duplicate detection.
-- `group_id` is a non-empty string with no leading/trailing whitespace or control
-  characters. It is URL-encoded as one path segment and sent unchanged in JSON.
-  The upstream specification defines no tighter character or length constraint.
+- `group_id` is a non-empty, non-whitespace-only string containing valid Unicode
+  scalar values. Valid values are not stripped or otherwise changed. The value is
+  URL-encoded as one path segment and sent unchanged in JSON. The upstream
+  specification defines no tighter character or length constraint.
 - A valid GET `200` response is a JSON object whose `groupId` exactly equals the
   requested value. The API documents no response body for POST or DELETE, so only
   their status codes are required on expected success.
@@ -163,9 +169,10 @@ this specification/bootstrap phase:
   transaction identifier, or atomic multi-node primitive.
 - The challenge asks to deploy a client but does not define invocation arguments,
   scheduling, exit codes, or whether Kubernetes should run a Job or Deployment.
-- The required Python versions, package/import name, coverage threshold, license,
-  and publication visibility are not specified. This bootstrap proposes Python
-  3.11+ and import name `mci_cluster_client`.
+- The challenge does not specify Python versions, package/import name, coverage
+  threshold, license, or publication visibility. This implementation chooses
+  Python 3.11+, import name `mci_cluster_client`, and 95% branch-aware coverage;
+  license and publication visibility remain unresolved.
 
 ## Optional enhancements
 
@@ -176,10 +183,10 @@ core submission:
   proven.
 - Persistent Saga recovery across client-process crashes.
 - Metrics/tracing exporters beyond safe structured logging.
-- A repair/reconciliation command for pre-existing mixed cluster state.
+- A dry-run or explicit repair command for states that normal convergence cannot
+  safely classify.
 - Server-supported idempotency keys or conditional requests if the remote contract
   is extended.
 
 An API server, web UI, database, Kubernetes operator, and service mesh are out of
 scope, not enhancements for this assignment.
-

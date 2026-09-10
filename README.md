@@ -6,10 +6,8 @@ client of the supplied API; it does not implement the cluster or its server.
 
 ## Current status
 
-This first phase contains the interpreted requirements, design, test plan, Codex
-guidance, and preliminary packaging metadata. The client, tests, lock file,
-Dockerfile, CI workflow, and Kubernetes manifests are intentionally not implemented
-yet. The proposed API below is therefore documentation, not currently runnable.
+Stage 2 implements the synchronous library and deterministic unit tests. The CLI,
+Dockerfile, CI workflow, and Kubernetes manifests remain intentionally deferred.
 
 ## Reliability model
 
@@ -28,10 +26,23 @@ the client lost the response. The client will not blindly repeat POST or DELETE.
 It will retain a machine-readable outcome for every node and keep rollback failures
 separate from the original failure.
 
-## Proposed usage
+## Usage
+
+Install the package from a checkout in a clean environment with:
+
+```text
+python -m pip install .
+```
+
+Then construct the synchronous client:
 
 ```python
-from mci_cluster_client import ClusterClient
+from mci_cluster_client import (
+    ClusterClient,
+    ClusterOperationError,
+    RetryPolicy,
+    TimeoutConfig,
+)
 
 nodes = [
     "node1.example.com",  # normalized to HTTPS
@@ -39,23 +50,44 @@ nodes = [
     "https://node3.example.com/",
 ]
 
-with ClusterClient(nodes=nodes) as client:
-    create_report = client.create_group("group-123")
-    delete_report = client.delete_group("group-123")
+try:
+    with ClusterClient(
+        nodes=nodes,
+        timeout=TimeoutConfig(connect=2, read=5, write=5, pool=2),
+        retry=RetryPolicy(max_attempts=3, base_delay=0.1, max_delay=1.0),
+    ) as client:
+        create_report = client.create_group("group-123")
+        delete_report = client.delete_group("group-123")
+except ClusterOperationError as error:
+    # Safe, JSON-compatible operation journal:
+    failure = error.report.to_dict()
 ```
 
 Successful reports will include normal success and idempotent no-op success.
 Failures will raise a structured exception carrying the full report, primary
-failure, and separate compensation failures. See [the design](docs/DESIGN.md) for
-the proposed types and exact algorithm.
+failure, and separate compensation failures. `close()` is idempotent. A supplied
+`httpx.Client` remains caller-owned; a client constructed internally, including one
+using an injected `httpx.BaseTransport`, is closed by `close()` or context-manager
+exit. See [the design](docs/DESIGN.md) for the types and exact algorithm.
+
+Bare hosts default to HTTPS. Explicit HTTP and HTTPS origins are accepted; base
+paths, embedded credentials, query strings, fragments, invalid hosts, and duplicate
+canonical origins are rejected before requests. This library deliberately provides
+no authentication mechanism. Callers needing authentication must configure a
+caller-owned `httpx.Client`, whose headers and credentials are never copied into
+reports or logs. Group IDs must be non-empty, non-whitespace-only strings containing
+valid Unicode scalar values; accepted IDs are preserved exactly in JSON and
+percent-encoded as one GET path segment.
 
 ## Idempotency semantics
 
 - Create when all nodes already contain the group is a successful no-op.
 - Delete when all nodes already lack the group is a successful no-op.
-- Mixed initial state is a conflict; the client makes no mutation.
+- Mixed initial state safely converges: create changes only absent nodes, while
+  delete changes only present nodes.
 - A repeat after an incomplete or indeterminate operation performs fresh preflight.
-  It does not infer ownership from existence or silently repair divergence.
+  It does not reuse historical ownership; it converges from the newly observed
+  per-node states.
 
 These are client semantics, not server-side idempotency. The supplied API has no
 idempotency key or conditional mutation feature.
@@ -64,8 +96,9 @@ idempotency key or conditional mutation feature.
 
 Use the existing `faq` Conda environment. Do not create `.venv` and do not use
 `uv venv`, `uv sync`, or `uv run` against the shared environment. Dependencies are
-declared in `pyproject.toml`; `uv.lock` will be generated in a later phase for clean
-CI and container builds.
+declared in `pyproject.toml`. `uv.lock` remains pending because registry resolution
+was unavailable in this environment; it must be generated with `uv lock` before
+clean CI and container builds.
 
 After activating `faq`, the eventual quality checks are:
 
@@ -82,10 +115,9 @@ required.
 
 ## Scope and delivery
 
-Mandatory final work includes the client, deterministic unit tests, complete README
-usage, a reproducibility lock, an executable Docker image, basic Kubernetes
-manifests, and GitHub Actions CI. Creating or pushing a GitHub repository is not
-authorized in this phase.
+Remaining mandatory final work includes a CLI, executable Docker image, basic
+Kubernetes manifests, and GitHub Actions CI. Creating or pushing a GitHub repository
+is not authorized in this phase.
 
 Optional enhancements are limited to an async API, bounded parallelism, durable
 Saga recovery, extra telemetry exporters, a repair command, or server-supported
@@ -95,8 +127,8 @@ database, operator, and service mesh are out of scope.
 ## Documentation
 
 - [Requirements and assumptions](docs/REQUIREMENTS.md)
-- [Proposed architecture and algorithms](docs/DESIGN.md)
-- [Planned test coverage](docs/TEST_MATRIX.md)
+- [Architecture and algorithms](docs/DESIGN.md)
+- [Test coverage matrix](docs/TEST_MATRIX.md)
 - Original read-only challenge: `reference/coding-challenge.md` and
   `reference/coding-challenge.pdf`
 
@@ -107,4 +139,3 @@ its own timeout-after-commit from a concurrent writer using only GET, cannot rec
 automatically from a process crash without durable transaction state, and cannot
 restore server metadata not exposed by the API. Unknown state is reported as
 indeterminate rather than presented as success.
-

@@ -12,7 +12,7 @@ dependencies = [
     "httpx>=0.27,<1",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "mypy>=1.11,<3",
     "pytest>=8,<10",
@@ -25,11 +25,16 @@ packages = ["src/mci_cluster_client"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
+pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
 source = ["mci_cluster_client"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
 
 [tool.mypy]
 python_version = "3.11"

@@ -2,32 +2,34 @@
 
 ## Status
 
-This is a pre-implementation design. It describes a synchronous Python client of
-the supplied REST API. It does not implement the cluster service and does not claim
-distributed ACID guarantees.
+This design describes the implemented synchronous Python client of the supplied
+REST API. It does not implement the cluster service and does not claim distributed
+ACID guarantees.
 
 ## Public API proposal
 
-The proposed import package is `mci_cluster_client`:
+The public import package is `mci_cluster_client`:
 
 ```python
-from mci_cluster_client import ClusterClient, OperationReport, RetryPolicy, TimeoutPolicy
+from mci_cluster_client import ClusterClient, OperationReport, RetryPolicy, TimeoutConfig
 
 with ClusterClient(
     nodes=["node1.example.com", "https://node2.example.com"],
-    timeout=TimeoutPolicy(connect=2.0, read=5.0, write=5.0, pool=2.0),
-    retry=RetryPolicy(max_read_attempts=3, base_delay=0.1, max_delay=1.0),
+    timeout=TimeoutConfig(connect=2.0, read=5.0, write=5.0, pool=2.0),
+    retry=RetryPolicy(max_attempts=3, base_delay=0.1, max_delay=1.0),
 ) as client:
     created: OperationReport = client.create_group("group-123")
     deleted: OperationReport = client.delete_group("group-123")
 ```
 
-Constructor injection will accept an HTTP transport/client boundary plus sleep and
-jitter callables for deterministic tests. Authentication, custom TLS, or headers
-belong at that HTTP boundary; reports must not expose them. Configuration objects
-are immutable. `create_group` and `delete_group` either return a complete successful
-report (including no-op success) or raise a structured `ClusterOperationError`
-carrying the complete unsuccessful report.
+Constructor injection accepts either an HTTP transport or a caller-owned
+`httpx.Client`, plus sleep, random, and operation-ID callables for deterministic
+tests. Authentication, custom TLS, or headers belong at that HTTP boundary; reports
+must not expose them. Configuration objects are immutable. `create_group` and
+`delete_group` either return a complete successful report (including no-op success)
+or raise a structured `ClusterOperationError` carrying the complete unsuccessful
+report. `close()` and context-manager exit close only an internally created HTTP
+client; a supplied client remains caller-owned.
 
 ## Component boundaries
 
@@ -63,33 +65,35 @@ GET path segment to prevent path injection.
 
 The operation journal has one entry for every node and retains input order.
 
-| Field | Proposed values |
+| Field | Values |
 | --- | --- |
 | `initial_state` | `present`, `absent`, `unknown` |
-| `preflight_result` | status/evidence, attempt count, sanitized error |
-| `mutation_result` | `not_attempted`, `confirmed_success`, `definitive_failure`, `ambiguous` |
-| `reconciliation_result` | `not_needed`, `present`, `absent`, `unknown` plus attempts/evidence |
-| `ownership` | `none`, `preexisting`, `confirmed`, `inferred`, `unproven` |
-| `compensation_result` | `not_required`, `not_attempted`, `confirmed_success`, `reconciled_success`, `definitive_failure`, `ambiguous` |
+| `preflight_attempts` / `preflight_error` | attempt count and last sanitized inconclusive evidence |
+| `request_outcome` | `not_required`, `not_attempted`, `confirmed_success`, `ambiguous` |
+| `reconciliation_outcome` | `not_required`, `present`, `absent`, `unknown` plus attempts/evidence |
+| `transition_ownership` | `none`, `confirmed`, `inferred`, `possible` |
+| `compensation_outcome` | `not_required`, `not_attempted`, `confirmed_success`, `reconciled_success`, `failed`, `ambiguous` |
 | `final_state` | `present`, `absent`, `unknown` |
 
 The overall `OperationReport` includes a local correlation ID, action, group ID,
-start/end metadata, `succeeded`/`noop`/`rolled_back`/`rollback_incomplete`/
-`indeterminate` status, and all node entries. The correlation ID is for diagnostics
-only; the upstream API does not accept it as an idempotency key.
+`succeeded`/`noop`/`failed`/`rolled_back`/`rollback_incomplete`/`indeterminate`
+status, and all node entries. The correlation ID is for diagnostics only; the
+upstream API does not accept it as an idempotency key.
 
 ## Preflight decision
 
 GET every node using the read retry policy. Validate a 200 body strictly; classify
-404 as absent. If any node remains unknown, raise `PreflightError` without mutation.
-If present and absent states are mixed, raise `InitialStateConflict` without
-mutation. Uniform states select one of the action-specific paths below.
+404 as absent. If any node remains unknown, raise `ClusterOperationError` without mutation.
+Known present/absent states may be mixed. Each action selects only nodes whose
+initial state differs from its target, while already-converged nodes remain
+unchanged.
 
 ## Create transaction algorithm
 
 1. Validate all inputs and preflight all nodes.
-2. If every node is present, return `noop`; ownership remains `preexisting`.
-3. If every node is absent, POST sequentially in configured order.
+2. If every node is present, return `noop`.
+3. Select initially absent nodes and POST only those nodes, sequentially in
+   configured order. Initially present nodes are unchanged.
 4. A 201 is confirmed success and creates compensation ownership. For an ambiguous
    or non-success result, do not repeat POST; reconcile with GET.
 5. If reconciliation finds the requested group present, record the original
@@ -98,43 +102,51 @@ mutation. Uniform states select one of the action-specific paths below.
 6. If reconciliation finds absent or remains unknown, stop. Preserve that event as
    the forward failure and mark later nodes `not_attempted`.
 7. Walk successful owned creates, including an inferred create on the failing node
-   when applicable, in reverse order. DELETE each once. Reconcile uncertain
+   when applicable, in reverse order. If the failing mutation remains unresolved,
+   also include it as a possible transition because its preflight was absent and
+   this operation dispatched POST. DELETE each once. Reconcile uncertain
    compensation results with GET; absent is compensation success.
-8. Raise `CreateOperationError` with the full report. A complete rollback is
+8. Raise `ClusterOperationError` with the full report. A complete rollback is
    `rolled_back`; any failed/unknown compensation is `rollback_incomplete` or
    `indeterminate`. The original create failure stays primary.
 
-An unresolved ambiguous create does not grant ownership and is never blindly
-deleted. Its state remains unknown and is called out for operator reconciliation.
+An unresolved ambiguous create is not treated as a confirmed transition. Under the
+documented no-concurrent-same-group-writer assumption, however, its known absent
+preflight plus dispatched POST makes one inverse DELETE the safest attempt to
+restore the exact initial state. If verification is still unavailable, the report
+remains indeterminate.
 
 ## Delete transaction algorithm
 
 1. Validate all inputs and preflight all nodes.
 2. If every node is absent, return `noop`.
-3. If every node is present, DELETE sequentially in configured order.
+3. Select initially present nodes and DELETE only those nodes, sequentially in
+   configured order. Initially absent nodes are unchanged.
 4. A 200 is confirmed success. For an ambiguous or non-success result, do not repeat
    DELETE; reconcile with GET.
 5. If reconciliation finds absent, record an inferred successful deletion under
    the no-concurrent-writer assumption and continue. If it finds present or remains
    unknown, stop and preserve the original failure.
-6. In reverse order, POST once for each attributable deletion. Reconcile uncertain
-   compensation; a valid GET showing the group present is compensation success.
-7. Raise `DeleteOperationError` with the complete report and separate rollback
+6. In reverse order, POST once for each attributable deletion. Include an unresolved
+   dispatched DELETE as a possible transition under the no-concurrent-writer
+   assumption. Reconcile uncertain compensation; a valid GET showing the group
+   present is compensation success.
+7. Raise `ClusterOperationError` with the complete report and separate rollback
    failures.
 
 Delete compensation only restores the documented `groupId`. It cannot restore
-undocumented server metadata. An unresolved mutation does not establish an
-attributable transition and is not compensated automatically.
+undocumented server metadata. An unresolved mutation remains explicitly uncertain
+even though it receives the single safest inverse attempt described above.
 
 ## Reconciliation rules
 
-- Probe only with GET and only within both an attempt limit and an elapsed-time
-  budget.
+- Probe only with GET, a finite attempt limit, bounded per-request timeouts, and
+  bounded delay between attempts.
 - `200` plus a JSON object with exactly the requested `groupId` establishes
   `present`; `404` establishes `absent`.
 - Malformed JSON, a non-object, missing/wrong/non-string `groupId`, redirects,
-  unexpected statuses, timeouts, and transport errors are failed probe evidence,
-  not proof of either state.
+  unexpected statuses, timeouts, transport errors, and response decoding failures
+  are failed probe evidence, not proof of either state.
 - Retry failed reads with exponential backoff and jitter until a conclusive state
   or the budget is exhausted. Record every attempt in sanitized form.
 - Reconciliation never erases the mutation's original timeout/status/error; it adds
@@ -151,41 +163,40 @@ absent-to-present transition was safely inferred. A delete rollback POST similar
 requires initially present, this operation dispatched DELETE, and the
 present-to-absent transition was confirmed or safely inferred.
 
-Pre-existing state, unattempted nodes, mixed-state conflicts, failed preflight,
-and unresolved ambiguous transitions are never mutated as compensation. Ownership
-is per operation and is not inferred from a prior process or repeated call.
+Unchanged pre-existing state, unattempted nodes, and failed preflight are never
+mutated as compensation. A still-unknown dispatched mutation may receive one
+inverse attempt based on its exact known preflight state and the single-writer
+assumption, not based on current existence. Ownership is per operation and is not
+inferred from a prior process or repeated call.
 
 ## Exception and result model
 
-Proposed exception hierarchy:
+Public exception hierarchy:
 
 ```text
 ClusterClientError
 |-- ValidationError
-|-- PreflightError
-|-- InitialStateConflict
+|-- ClientClosedError
 `-- ClusterOperationError
-    |-- CreateOperationError
-    `-- DeleteOperationError
 ```
 
-Every exception is safe to stringify and structured exceptions expose `.report`.
-`ClusterOperationError` also exposes `.primary_failure` and an ordered
-`.compensation_failures` collection. Node failures use stable enums/codes plus
+Every exception is safe to stringify. `ClusterOperationError` exposes `.report`,
+`.primary_error`, and an ordered `.compensation_errors` collection. Node failures
+use stable enums/codes plus
 sanitized status and exception category; callers do not need to parse messages.
 Validation failures that occur before a journal exists contain field-level details
 and no secret-bearing values.
 
 ## Retry policy
 
-Proposed defaults are three total GET attempts, 0.1-second base delay, 1-second
-delay cap, full jitter, and explicit HTTP timeouts of 2 seconds connect/pool and 5
-seconds read/write. Configuration validates positive finite values and hard caps.
+Defaults are three total GET attempts, 0.1-second base delay, 1-second delay cap,
+no jitter, and explicit HTTP timeouts of 2 seconds connect/pool and 5 seconds
+read/write. Callers can opt into symmetric jitter bounded by the configured delay
+cap. Configuration rejects non-finite or invalid values.
 
 Delay follows capped exponential backoff, with injected jitter and sleep. The same
-read policy applies to preflight and reconciliation, with separate budgets so an
-operation cannot retry forever. Rate-limit responses may honor a bounded
-`Retry-After`; invalid or excessive values are ignored/capped.
+read policy applies independently to each preflight and reconciliation probe, so an
+operation cannot retry forever.
 
 POST and DELETE each get one attempt by default. The supplied API defines neither
 idempotency keys nor DELETE-on-absent behavior, so neither mutation is blindly
@@ -201,10 +212,10 @@ API, and makes the assignment easier to reason about. Preflight is also sequenti
 for deterministic evidence and tests; bounded parallel preflight is only an
 optional future optimization.
 
-The client should use a same-process lock keyed by normalized node set plus group ID
-to reject or serialize conflicting local operations. It cannot coordinate other
-processes or external writers. Parallel mutation is an optional enhancement because
-it increases the number of in-flight ambiguous outcomes and eliminates a simple
+Each `ClusterClient` instance uses a small operation lock, serializing operations
+through that instance. It cannot coordinate separate client instances, processes,
+or external writers. Parallel mutation is an optional enhancement because it
+increases the number of in-flight ambiguous outcomes and eliminates a simple
 rollback stack.
 
 ## Observability and security
@@ -246,4 +257,3 @@ node/action/group configuration and Secret references, not an invented service.
 GitHub Actions will install from the declared lock in a clean environment and run
 the five repository quality commands. These artifacts are deliberately deferred
 from this phase.
-
