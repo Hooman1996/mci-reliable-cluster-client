@@ -11,8 +11,8 @@ ambiguous mutations with bounded reads, and compensates attributable changes aft
 failure. Results are immutable, machine-readable operation reports.
 
 It does not provide a server, web UI, database, authentication scheme, durable Saga
-store, distributed lock, or background repair service. Docker, Kubernetes, CI, and
-GitHub publication are deliberately outside Stage 3.
+store, distributed lock, or background repair service. Kubernetes, CI, and GitHub
+publication remain separate delivery stages.
 
 ## Installation
 
@@ -36,6 +36,79 @@ conda activate faq
 python -m pytest
 PYTHONPATH=src python -m mci_cluster_client --help
 ```
+
+## Container image
+
+BuildKit builds the application wheel and every runtime dependency wheel in a
+builder stage, then installs only from that wheel collection into a clean Python
+3.12 slim Bookworm runtime stage:
+
+```text
+docker buildx build --check .
+docker buildx build --load --tag mci-cluster-client:local .
+```
+
+The image defaults to `--help`, so running it with no arguments is safe and does not
+contact a cluster. Help and version output also require no network:
+
+```text
+docker run --rm mci-cluster-client:local
+docker run --rm mci-cluster-client:local --help
+docker run --rm mci-cluster-client:local --version
+docker run --rm mci-cluster-client:local create --help
+docker run --rm mci-cluster-client:local delete --help
+```
+
+Real operations receive nodes at invocation time. `--node` is repeatable:
+
+```text
+docker run --rm mci-cluster-client:local \
+  create group-123 \
+  --node https://node1.example.com \
+  --node https://node2.example.com
+
+docker run --rm mci-cluster-client:local \
+  delete group-123 \
+  --node https://node1.example.com \
+  --node https://node2.example.com
+```
+
+Alternatively, pass a comma-separated node list through `MCI_CLUSTER_NODES`:
+
+```text
+docker run --rm \
+  -e MCI_CLUSTER_NODES=https://node1.example.com,https://node2.example.com \
+  mci-cluster-client:local create group-123
+```
+
+After an operation attempt, stdout contains one JSON report and diagnostics go to
+stderr. Exit codes are `0` for success/no-op, `2` for usage or validation errors,
+`3` for a known failure with complete rollback, `4` for an indeterminate or
+incompletely rolled-back result, and `130` for interruption.
+
+The image embeds no nodes, group IDs, credentials, tokens, certificates, or other
+environment-specific configuration. Authentication is outside the challenge API
+contract and remains the caller's responsibility; deployments that add it should
+inject it at runtime through an appropriate caller-controlled HTTP boundary.
+
+The runtime uses the dedicated numeric user and group `10001:10001` and a root-owned,
+non-writable working directory. It is designed to run with no Linux capabilities
+and no writable filesystem. For example, use the intended restrictions as follows:
+
+```text
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges \
+  mci-cluster-client:local --help
+```
+
+There is no `HEALTHCHECK`: this is a finite CLI/job rather than a service. For the
+same reason, the later Kubernetes artifact will be a `Job`, not a `Deployment`.
+
+No `uv.lock` is currently committed because registry access timed out during the
+locking stage. The image therefore resolves the bounded dependency constraints in
+`pyproject.toml` while building. This is a temporary reproducibility limitation:
+the same Dockerfile can be adapted to consume a committed lock file once one can be
+generated against the official registry.
 
 ## Library usage
 
@@ -206,11 +279,14 @@ tests/                    deterministic library and CLI unit tests
 docs/                     interpreted requirements, design, and test matrix
 reference/                read-only original challenge sources
 pyproject.toml            package metadata, console command, tools, dependencies
+Dockerfile                multi-stage non-root executable image
+.dockerignore             minimal, secret-safe Docker build context
 ```
 
 ## Pending delivery artifacts
 
-- **Docker:** pending; the next stage can use `mci-cluster` as its image entrypoint.
+- **Docker:** delivered as a multi-stage, non-root image using `mci-cluster` as its
+  entrypoint and safe `--help` default.
 - **Kubernetes:** pending; the eventual one-shot workload should be modeled as a Job.
 - **CI and lock file:** pending until the later delivery stage and registry access.
 
