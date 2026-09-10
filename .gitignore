@@ -1,0 +1,28 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage and test output
+.coverage
+.coverage.*
+htmlcov/
+
+# Packaging output
+build/
+dist/
+*.egg-info/
+
+# Local environments and secrets
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Local tooling and OS artifacts
+.codex-log/
+.DS_Store
+
