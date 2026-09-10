@@ -6,7 +6,7 @@ This design describes the implemented synchronous Python client and its thin
 one-shot CLI for the supplied REST API. It does not implement the cluster service
 and does not claim distributed ACID guarantees.
 
-## Public API proposal
+## Public API
 
 The public import package is `mci_cluster_client`:
 
@@ -37,19 +37,19 @@ client; a supplied client remains caller-owned.
 | --- | --- | --- |
 | `ClusterClient` | Validate an operation, coordinate preflight/forward/rollback, return or raise with a report | Construct raw requests or hide partial outcomes |
 | URL and ID validation | Canonicalize nodes, reject unsafe/duplicate inputs, encode GET path segment | Make network calls |
-| `NodeApi` | Map GET/POST/DELETE to the documented endpoint and classify responses | Decide cross-node rollback policy |
-| Injectable transport | Execute one bounded HTTP request | Retry or log secret-bearing request data implicitly |
+| HTTP and URL helpers | Map GET/POST/DELETE to documented endpoints, normalize origins, and classify responses | Decide cross-node rollback policy |
+| Injectable transport | Execute bounded HTTP requests | Retry or log secret-bearing request data implicitly |
 | Retry/reconciliation policy | Bound GET probes, calculate exponential backoff and jitter through injected functions | Resend ambiguous mutations by default |
 | Saga journal | Accumulate immutable/serializable per-node evidence and ownership | Infer ownership from existence alone |
 | Result/exception model | Expose machine-readable success, failure, rollback, and indeterminate details | Replace the original failure with a rollback error |
 | CLI | Resolve process configuration, call `ClusterClient` once, serialize its report, and select an exit code | Reimplement transaction, retry, reconciliation, or compensation policy |
 
-`httpx` is the planned HTTP implementation, but orchestration depends on a small
-transport protocol so tests can script exact responses and exceptions.
+`httpx` is the HTTP implementation, while orchestration accepts an injectable
+transport so tests can script exact responses and exceptions.
 
 ## Validation and URL normalization
 
-All validation finishes before the first mutation. Node normalization will:
+All validation finishes before the first mutation. Node normalization:
 
 1. require a non-empty node list of strings;
 2. add `https://` when the scheme is omitted;
@@ -242,12 +242,10 @@ rollback stack.
 
 ## Observability and security
 
-Emit optional structured events for operation start/end, per-node phase and
-classification, retry count, duration, and rollback summary. Use normalized node
-origin, local correlation ID, action, and hashed or explicitly safe group ID fields.
-Do not log request/response bodies by default. Always redact authorization,
-proxy-authorization, cookies, API keys, transport configuration, and arbitrary
-headers. Exception reprs and serialized reports follow the same rule.
+Logging emits safe mutation and retry events with the local correlation ID, action,
+and normalized node origin. It does not log request or response bodies, group IDs,
+authorization material, cookies, API keys, transport configuration, or arbitrary
+headers. Exception strings and serialized reports follow the same rule.
 
 Use TLS verification by default. Redirects are disabled so credentials and mutations
 are not forwarded to an unexpected host. Authentication and custom certificate
@@ -285,6 +283,7 @@ mutation whose prior final state is indeterminate. Operators inspect the JSON re
 and Pod exit code before explicitly creating another Job. Pod and container security
 contexts match the non-root, read-only image design.
 
-CI and a reproducible dependency lock remain deferred. Runtime verification of the
-container and Job also remains pending because official PyPI dependency resolution
-timed out during the image build.
+CI is configured to verify Python 3.11 and 3.12, package construction, the container,
+offline CLI smoke paths, and an offline render of the Job. Until a reviewed
+dependency lock is committed, hosted CI generates and uploads a temporary lock
+without modifying the repository.

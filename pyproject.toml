@@ -5,9 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "mci-reliable-cluster-client"
 version = "0.1.0"
-description = "Reliable Saga-based client for the MCI multi-node group API challenge"
+description = "Reliable Saga-based client for the MCI multi-node group API"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "httpx>=0.27,<1",
 ]
@@ -45,7 +45,6 @@ strict = true
 files = ["src"]
 
 [tool.ruff]
-extend-exclude = [".agents", "reference"]
 line-length = 100
 target-version = "py311"
 

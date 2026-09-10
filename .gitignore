@@ -23,7 +23,6 @@ venv/
 !.env.example
 
 # Local tooling and OS artifacts
-.codex-log/
 .vscode/
 reference/
 .DS_Store

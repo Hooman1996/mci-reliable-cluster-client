@@ -10,18 +10,18 @@ after mutation commit. Injected sleep and jitter make retry tests instant and
 deterministic. No test requires DNS, sockets, a live cluster, Docker, GitHub, or
 Kubernetes.
 
-The IDs below are implemented test names or parametrized test families unless a row
-is explicitly marked as a later delivery check.
+The IDs below are implemented test names, parametrized test families, or repository
+verification checks.
 
 | Requirement / risk | Planned tests | Expected evidence |
 | --- | --- | --- |
 | M-01 client creates on every node | `test_all_absent_create_succeeds_on_every_node_with_exact_contract` | GET all, POST each, complete per-node success report |
 | M-01 client deletes on every node | `test_all_present_delete_succeeds_on_every_node_with_exact_contract` | GET all, DELETE each, complete per-node success report |
 | M-02 unstable API and rollback | `test_middle_node_failure_rolls_create_back_in_reverse_order`, `test_delete_failure_recreates_only_changed_node` | failure stops forward work and restores attributable changes |
-| M-03 / D-06 README assumptions and usage | submission audit | README documents runnable library/CLI usage, assumptions, and limitations |
+| M-03 / D-06 README assumptions and usage | documentation review | README documents runnable library/CLI usage, assumptions, and limitations |
 | M-04 / R-16 no live services | autouse `block_real_network`, `ScriptedTransport.assert_done` | sockets fail immediately and every expected request is scripted |
-| M-05 Git repository | submission audit | repository metadata exists; remote publication remains authorization-dependent |
-| M-06 / D-03 executable image | `test_container.py` static audit; runtime checks pending registry access | declared entrypoint invokes the client CLI without secrets/root; runtime verification limitation is explicit |
+| M-05 Git repository | repository hygiene review | repository metadata and standalone tracked content are verified before publication |
+| M-06 / D-03 executable image | `test_container.py` static audit; hosted CI build and offline smoke checks | declared entrypoint invokes the client CLI without secrets or root privileges |
 | M-07 / D-04 Kubernetes | offline `kubectl kustomize` structural audit; client dry-run where kubectl does not require API discovery | exactly one ConfigMap and one Job; secure non-root Pod; ConfigMap node reference; no automatic Job retry or workload execution during validation |
 | M-08 / D-05 quality gates | CI workflow plus local command audit | format, lint, mypy, pytest, and coverage commands run |
 | R-01 Saga, no ACID claim | rollback tests plus documentation audit | report distinguishes forward and compensation phases; docs disclaim ACID |
@@ -65,11 +65,12 @@ is explicitly marked as a later delivery check.
 | CLI output and status mapping | compact/pretty, success/no-op, rolled-back, indeterminate, and rollback-failure tests in `test_cli.py` | exactly one JSON report uses stable enum strings on stdout; diagnostics use stderr; exit is `0`, `3`, or `4` from actual report state |
 | CLI expected local failures | missing/malformed nodes, validation, argparse, and KeyboardInterrupt tests in `test_cli.py` | no report or traceback; stable exit `2` or `130`; no client/network call when configuration is invalid |
 | CLI execution methods/lifecycle | help/version tests, `test_execute_uses_context_manager_and_dispatches`, entrypoint tests, module smoke commands | installed and module entrypoints share the parser; client context always exits |
-| D-02 dependency reproducibility | pending successful `uv lock` verification | registry resolution was unavailable in Stage 2; clean install is deferred to CI stage |
+| D-02 dependency reproducibility | CI lock bootstrap followed by `uv sync --locked --all-groups` | when absent, hosted CI generates and uploads `uv.lock` for review without committing it; a committed lock is checked instead |
 | Repository cleanliness | audit plus CI ignore check | no `.venv`, caches, credentials, build output, or modified references |
 
 ## Coverage interpretation
 
 Coverage must exercise decision branches, not just lines: each state transition,
 ambiguous result, ownership gate, rollback path, and exception status needs an
-assertion. `pyproject.toml` enforces 95% branch-aware coverage; Stage 2 exceeds it.
+assertion. `pyproject.toml` enforces 95% branch-aware coverage; the current suite
+exceeds it.

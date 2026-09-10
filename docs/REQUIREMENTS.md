@@ -1,18 +1,11 @@
 # Requirements
 
-## Status and source
+## Status
 
-This document is the interpreted specification for the MCI API-consumer take-home
-assignment. The authoritative originals are the read-only files
-`reference/coding-challenge.md` and `reference/coding-challenge.pdf`. Requirements
-added by the assignment-preparation brief are mandatory for this repository unless
-explicitly labeled optional.
-
-The Markdown and two-page PDF have the same material requirements and API contract.
-There is one non-material editorial difference: the Markdown joins
-`httpxlibrary`, while the PDF renders `httpx library`. The PDF additionally embeds
-links on the Minikube and Kubernetes documentation text. These differences do not
-change scope.
+This document records the interpreted specification for the MCI API-consumer
+take-home assignment. It includes the complete upstream API contract, required
+client behavior, engineering assumptions, and known ambiguities needed to evaluate
+the repository on its own.
 
 ## Upstream API contract
 
@@ -39,19 +32,18 @@ cluster nodes or their API.
   `README.md`.
 - **M-04 — Unit tests:** Provide unit tests; live end-to-end services are not
   required and must not be needed by the test suite.
-- **M-05 — Packaging:** Maintain the work as a Git repository and ultimately make
-  it suitable for publication to GitHub. Creating the remote repository is outside
-  this phase and requires explicit authorization.
+- **M-05 — Packaging:** Maintain the work as a Git repository suitable for
+  publication to GitHub.
 - **M-06 — Container:** Provide a Dockerfile or Containerfile for an image that
-  executes the client. The multi-stage Dockerfile is delivered; runtime verification
-  remains blocked by official PyPI timeouts.
+  executes the client. Hosted CI is configured to build the multi-stage Dockerfile
+  and run offline CLI smoke tests after a push.
 - **M-07 — Kubernetes:** Provide basic Kubernetes manifests under `manifests/`
   showing how the executable client is run. A secure, one-shot Job and its
   ConfigMap/Kustomize base are delivered.
 - **M-08 — Quality:** Include reasonable code-quality measures. For this repository
   that includes formatting, linting, static typing, unit tests, and coverage.
 
-`httpx` is a recommendation in the original challenge, not an upstream protocol
+`httpx` is a recommendation in the assignment, not an upstream protocol
 requirement. This design adopts it as the sole runtime dependency unless later
 implementation evidence justifies a change.
 
@@ -120,21 +112,23 @@ implementation evidence justifies a change.
   processing at the first unreconciled failure, mark later nodes not attempted, and
   retain a complete outcome for every configured node.
 
-## Mandatory final repository requirements
+## Repository deliverables
 
-Stages 3 through 5 deliver the production client, container definition, Kubernetes
-Job, and their documentation. Dependency locking and runtime image verification
-remain unavailable because official registry resolution timed out:
+The repository includes the production client, container definition, Kubernetes
+Job, CI workflow, unified developer commands, and their documentation. Dependency
+locking uses a temporary hosted-CI bootstrap until a reviewed lock is committed:
 
 - **D-01 — Delivered:** Production client implementation and comprehensive unit
   test suite.
-- **D-02 — Pending:** Generate a reproducible `uv.lock` from all dependencies
-  declared in `pyproject.toml`, without syncing the shared `faq` environment.
-- **D-03 — Delivered, runtime verification pending:** Multi-stage, non-root
-  Dockerfile/Containerfile with useful executable behavior.
+- **D-02 — Bootstrap pending:** CI generates a temporary `uv.lock` from all
+  dependencies declared in `pyproject.toml` and uploads it for review without
+  committing it.
+- **D-03 — Delivered:** Multi-stage, non-root Dockerfile/Containerfile with useful
+  executable behavior; hosted CI is configured to perform the build and offline
+  smoke tests.
 - **D-04 — Delivered:** Basic Kubernetes manifests appropriate to that executable.
-- **D-05:** GitHub Actions CI running format check, lint, mypy, unit tests, and
-  coverage from a clean dependency installation.
+- **D-05 — Delivered:** GitHub Actions CI runs format check, lint, Mypy, unit tests,
+  and branch coverage from a clean dependency installation.
 - **D-06 — Delivered:** Final README with runnable library and CLI instructions.
 
 ## Working assumptions
@@ -174,9 +168,9 @@ remain unavailable because official registry resolution timed out:
 - The challenge asks to deploy a client but does not define invocation arguments,
   scheduling, exit codes, or whether Kubernetes should run a Job or Deployment.
 - The challenge does not specify Python versions, package/import name, coverage
-  threshold, license, or publication visibility. This implementation chooses
-  Python 3.11+, import name `mci_cluster_client`, and 95% branch-aware coverage;
-  license and publication visibility remain unresolved.
+  threshold, license, or publication visibility. This implementation supports and
+  tests Python 3.11 and 3.12, uses import name `mci_cluster_client`, and requires 95%
+  branch-aware coverage; license and publication visibility remain unresolved.
 
 ## Optional enhancements
 

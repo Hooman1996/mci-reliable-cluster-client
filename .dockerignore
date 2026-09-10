@@ -2,7 +2,6 @@
 .github
 .agents
 .codex
-.codex-log
 .vscode
 .idea
 AGENTS.md

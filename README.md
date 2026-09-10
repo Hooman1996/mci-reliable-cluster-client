@@ -1,8 +1,8 @@
 # MCI Reliable Cluster Client
 
 A synchronous Python client and one-shot CLI that create or delete one group on
-every configured node of the unreliable REST API in the supplied take-home
-assignment. The project implements an API consumer, not the remote cluster service.
+every configured node of an unreliable REST API. The project implements an API
+consumer, not the remote cluster service.
 
 ## Scope
 
@@ -11,31 +11,22 @@ ambiguous mutations with bounded reads, and compensates attributable changes aft
 failure. Results are immutable, machine-readable operation reports.
 
 It does not provide a server, web UI, database, authentication scheme, durable Saga
-store, distributed lock, or background repair service. CI and GitHub publication
-remain separate delivery stages.
+store, distributed lock, or background repair service.
 
 ## Installation
 
-Reviewers can install a checkout into a clean Python 3.11+ environment:
+Install a clone into an isolated Python 3.11 or 3.12 environment:
 
-```text
+```bash
+python -m venv .venv
+source .venv/bin/activate
 python -m pip install .
 mci-cluster --help
 ```
 
-The only runtime dependency is `httpx`. `uv.lock` is pending because registry access
-was unavailable; generate it in the later delivery stage before reproducible clean
-builds.
-
-Local development uses the existing `faq` Conda environment. A project `.venv` is
-intentionally not used, and `uv sync`, `uv run`, and `uv venv` must not be run against
-the shared environment:
-
-```text
-conda activate faq
-python -m pytest
-PYTHONPATH=src python -m mci_cluster_client --help
-```
+The only runtime dependency is `httpx`. Development dependencies are declared in
+`pyproject.toml` and can be installed into a uv-managed project environment with
+`uv sync --all-groups`.
 
 ## Container image
 
@@ -104,11 +95,9 @@ docker run --rm --network none --read-only --cap-drop ALL \
 There is no `HEALTHCHECK`: this is a finite CLI/job rather than a service. For the
 same reason, the Kubernetes artifact is a `Job`, not a `Deployment`.
 
-No `uv.lock` is currently committed because registry access timed out during the
-locking stage. The image therefore resolves the bounded dependency constraints in
-`pyproject.toml` while building. This is a temporary reproducibility limitation:
-the same Dockerfile can be adapted to consume a committed lock file once one can be
-generated against the official registry.
+Until a reviewed `uv.lock` is committed, the image resolves the bounded dependency
+constraints in `pyproject.toml` while building. The hosted workflow generates a
+temporary lock for review and does not modify the repository.
 
 ## Kubernetes Job
 
@@ -131,10 +120,9 @@ kubectl logs job/mci-group-operation
 kubectl delete -k manifests
 ```
 
-The image build is still blocked by official PyPI timeouts, so the Job cannot yet
-be run or loaded into kind. See the [manifest guide](manifests/README.md) for the
-client-side dry-run, wait/status commands, image replacement, kind workflow,
-security settings, and safe rerun guidance.
+See the [manifest guide](manifests/README.md) for the client-side dry-run,
+wait/status commands, image replacement, kind workflow, security settings, and safe
+rerun guidance.
 
 ## Library usage
 
@@ -278,24 +266,49 @@ instead of claiming guarantees the upstream API cannot support.
 
 ## Development and verification
 
-After `conda activate faq`, run:
+Create the development environment and run the quality gates from the repository
+root:
 
-```text
-python -m ruff format .
-python -m ruff check .
-python -m mypy src
-python -m pytest
-python -m pytest --cov=mci_cluster_client --cov-branch --cov-report=term-missing
-PYTHONPATH=src python -m mci_cluster_client --help
-PYTHONPATH=src python -m mci_cluster_client create --help
-PYTHONPATH=src python -m mci_cluster_client delete --help
-git diff --check
-git status --short
-test ! -e .venv
+```bash
+uv sync --all-groups
+uv run make verify
+uv run make k8s-render
 ```
 
 All tests use scripted or stateful in-memory transports and block real socket
 connections.
+
+The `Makefile` provides the same commands through `make help`. `make verify` runs
+the non-mutating formatting check, lint, strict type check, branch-aware coverage,
+and offline CLI smoke tests. Docker build/check/smoke and offline Kubernetes render
+targets are separate so they can be run only when their runtimes are available.
+
+## Continuous integration
+
+GitHub Actions runs on pushes to `main`, pull requests, and manual dispatches. Its
+Python matrix matches the declared support policy by testing 3.11 and 3.12. Every
+entry installs all declared dependency groups in an isolated CI environment and
+runs deterministic tests with branch coverage. Python 3.12 additionally gates Ruff
+formatting and lint, strict Mypy, offline CLI help/version smoke tests, and package
+construction. Successful 3.12 runs retain the wheel, source distribution, and
+coverage XML for seven days.
+
+The Docker job waits for the whole Python matrix, checks the Dockerfile with
+BuildKit, builds without publishing, and exercises only help/version commands with
+networking disabled. It also verifies the non-root entrypoint/default command,
+hardened read-only execution, image size visibility, the presence of `httpx`, and
+the absence of development tools. The Kubernetes job also waits for Python and
+only runs `kubectl kustomize`: it confirms exactly one ConfigMap and one Job, rejects
+other resource kinds, and checks key lifecycle, resource, and security fields. It
+does not configure a cluster or kubeconfig, apply resources, publish packages or
+images, use repository secrets, commit changes, or push changes.
+
+While `uv.lock` is absent, each Python job generates a temporary lock before running
+`uv sync --locked --all-groups`; the 3.12 job uploads it as the seven-day
+`generated-uv-lock` artifact. The workflow never commits that file. After the lock
+is reviewed and committed, the bootstrap branch can be removed and `uv lock --check`
+made unconditional. The first hosted run performs the full package build, container
+build and offline smoke tests, and Kubernetes render checks.
 
 ## Repository layout
 
@@ -303,21 +316,13 @@ connections.
 src/mci_cluster_client/   library, result models, transport helpers, and CLI
 tests/                    deterministic library and CLI unit tests
 docs/                     interpreted requirements, design, and test matrix
-reference/                read-only original challenge sources
 pyproject.toml            package metadata, console command, tools, dependencies
 Dockerfile                multi-stage non-root executable image
 .dockerignore             minimal, secret-safe Docker build context
 manifests/                Kustomize base for the one-shot Kubernetes Job
+Makefile                  unified local and CI developer commands
+.github/workflows/ci.yml  read-only verification workflow; no publishing
 ```
 
-## Delivery status
-
-- **Docker:** delivered as a multi-stage, non-root image using `mci-cluster` as its
-  entrypoint and safe `--help` default.
-- **Kubernetes:** delivered as a secure one-shot Job with offline Kustomize
-  validation and automatic retries disabled.
-- **CI and lock file:** pending until the later delivery stage and registry access.
-
 See [DESIGN.md](docs/DESIGN.md) for the exact state machine and
-[TEST_MATRIX.md](docs/TEST_MATRIX.md) for executable evidence. The original challenge
-under `reference/` remains read-only.
+[TEST_MATRIX.md](docs/TEST_MATRIX.md) for executable evidence.

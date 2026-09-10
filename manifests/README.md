@@ -29,7 +29,7 @@ Before applying:
 
 The ConfigMap contains only the non-secret node list. It intentionally contains no
 group ID, credentials, token, certificate, or authorization header. Authentication
-is caller/environment specific and is not defined by the challenge contract, so no
+is caller/environment specific and is not defined by the API contract, so no
 fabricated Secret or authentication settings are included.
 
 ## Render and validate locally
@@ -118,9 +118,8 @@ operation atomic.
 
 ## Local kind workflow
 
-Once the Docker image is buildable, a local image can be loaded into an existing
-kind cluster. These commands are documentation only; this stage does not create or
-contact a cluster:
+A locally built image can be loaded into an existing kind cluster. These commands
+are an operator workflow and are not run by the repository's offline verification:
 
 ```bash
 docker buildx build --load \
@@ -151,14 +150,14 @@ They have not been load-tested and should be observed and adjusted for real node
 counts and network behavior. The Job has one completion, one Pod at a time, a
 five-minute active deadline, and a 30-second termination grace period.
 
-## Current limitations
+## Verification boundaries
 
-- The image is implemented but has not been built successfully because official
-  PyPI timed out while resolving build dependencies; no runtime or kind validation
-  is currently possible.
+- Hosted CI is configured to build the image and exercise its offline help and
+  version paths after the first push; this repository does not claim a successful
+  local runtime test.
 - `uv.lock` is absent, so image dependency resolution is not fully reproducible.
 - The example hosts do not provide a real cluster API and must be replaced.
-- Authentication and TLS customization are unspecified by the challenge and are
+- Authentication and TLS customization are unspecified by the API contract and are
   not modeled by these manifests.
 - Client-side rendering validates structure, not admission policies, runtime image
   availability, network policy, DNS, certificates, credentials, quotas, or actual

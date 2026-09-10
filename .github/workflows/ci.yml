@@ -1,0 +1,189 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          check-latest: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          enable-cache: true
+
+      # Bootstrap only while uv.lock is absent. The generated lock is uploaded
+      # from Python 3.12 for review; this workflow never commits it. Once the
+      # reviewed lock is committed, remove the generation branch and require
+      # `uv lock --check` unconditionally.
+      - name: Check or generate dependency lock
+        id: lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f uv.lock ]]; then
+            echo "Dependency mode: checking committed uv.lock"
+            uv lock --check
+            echo "mode=checked" >> "$GITHUB_OUTPUT"
+          else
+            echo "Dependency mode: generating temporary uv.lock"
+            uv lock
+            echo "mode=generated" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Synchronize all dependency groups
+        run: uv sync --locked --all-groups
+
+      - name: Run tests with branch coverage
+        run: >-
+          uv run --locked make coverage
+          COVERAGE_ARGS="--cov=mci_cluster_client --cov-branch
+          --cov-report=term-missing --cov-report=xml"
+
+      - name: Run Python 3.12 quality and CLI gates
+        if: matrix.python-version == '3.12'
+        run: uv run --locked make format-check lint typecheck cli-smoke
+
+      - name: Build wheel and source distribution
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv build
+          test -n "$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+
+      - name: Upload generated lock bootstrap
+        if: matrix.python-version == '3.12' && steps.lock.outputs.mode == 'generated'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generated-uv-lock
+          path: uv.lock
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Python distributions
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload coverage XML
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-python-3.12
+          path: coverage.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  docker:
+    name: Docker image
+    needs: python
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Check Dockerfile
+        run: make docker-check
+
+      - name: Build and load image
+        run: make docker-build IMAGE=mci-cluster-client:ci
+
+      - name: Inspect and smoke-test image without networking
+        run: make docker-smoke IMAGE=mci-cluster-client:ci
+
+  kubernetes:
+    name: Kubernetes rendering
+    needs: python
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        with:
+          version: v1.34.1
+
+      - name: Render and verify manifests offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered_file="$(mktemp)"
+          trap 'rm -f "$rendered_file"' EXIT
+
+          kubectl kustomize manifests > "$rendered_file"
+          cat "$rendered_file"
+
+          test "$(grep -c '^kind: ConfigMap$' "$rendered_file")" -eq 1
+          test "$(grep -c '^kind: Job$' "$rendered_file")" -eq 1
+          test "$(grep -c '^kind:' "$rendered_file")" -eq 2
+          ! grep -Eq '^kind: (Deployment|StatefulSet|DaemonSet|CronJob|Service|Ingress|Secret|ServiceAccount|Role|ClusterRole|RoleBinding|ClusterRoleBinding)$' "$rendered_file"
+
+          grep -Eq '^[[:space:]]+completions: 1$' "$rendered_file"
+          grep -Eq '^[[:space:]]+parallelism: 1$' "$rendered_file"
+          grep -Eq '^[[:space:]]+backoffLimit: 0$' "$rendered_file"
+          grep -Eq '^[[:space:]]+activeDeadlineSeconds: 300$' "$rendered_file"
+          grep -Eq '^[[:space:]]+terminationGracePeriodSeconds: 30$' "$rendered_file"
+          grep -Eq '^[[:space:]]+restartPolicy: Never$' "$rendered_file"
+          grep -Eq '^[[:space:]]+automountServiceAccountToken: false$' "$rendered_file"
+          grep -Eq '^[[:space:]]+runAsNonRoot: true$' "$rendered_file"
+          grep -Eq '^[[:space:]]+runAsUser: 10001$' "$rendered_file"
+          grep -Eq '^[[:space:]]+runAsGroup: 10001$' "$rendered_file"
+          grep -Eq '^[[:space:]]+allowPrivilegeEscalation: false$' "$rendered_file"
+          grep -Eq '^[[:space:]]+readOnlyRootFilesystem: true$' "$rendered_file"
+          grep -Eq '^[[:space:]]+- ALL$' "$rendered_file"
+          grep -Eq '^[[:space:]]+type: RuntimeDefault$' "$rendered_file"
+          grep -Eq '^[[:space:]]+imagePullPolicy: IfNotPresent$' "$rendered_file"
+          grep -Eq '^[[:space:]]+configMapKeyRef:$' "$rendered_file"
+          grep -Eq '^[[:space:]]+requests:$' "$rendered_file"
+          grep -Eq '^[[:space:]]+limits:$' "$rendered_file"
+          grep -Eq '^[[:space:]]+cpu: 50m$' "$rendered_file"
+          grep -Eq '^[[:space:]]+memory: 64Mi$' "$rendered_file"
+          grep -Eq '^[[:space:]]+cpu: 250m$' "$rendered_file"
+          grep -Eq '^[[:space:]]+memory: 128Mi$' "$rendered_file"
