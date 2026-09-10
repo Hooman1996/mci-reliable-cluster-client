@@ -12,6 +12,11 @@ dependencies = [
     "httpx>=0.27,<1",
 ]
 
+[project.urls]
+Repository = "https://github.com/Hooman1996/mci-reliable-cluster-client"
+Issues = "https://github.com/Hooman1996/mci-reliable-cluster-client/issues"
+CI = "https://github.com/Hooman1996/mci-reliable-cluster-client/actions/workflows/ci.yml"
+
 [project.scripts]
 mci-cluster = "mci_cluster_client.cli:entrypoint"
 

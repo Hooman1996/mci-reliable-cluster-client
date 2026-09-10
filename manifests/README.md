@@ -152,10 +152,12 @@ five-minute active deadline, and a 30-second termination grace period.
 
 ## Verification boundaries
 
-- Hosted CI is configured to build the image and exercise its offline help and
-  version paths after the first push; this repository does not claim a successful
-  local runtime test.
-- `uv.lock` is absent, so image dependency resolution is not fully reproducible.
+- Hosted CI has built the image and passed its network-disabled help/version paths
+  and hardened read-only runtime smoke test. A full local image build is not
+  required for offline repository verification.
+- The committed `uv.lock` is mandatory. The Docker builder rejects a stale lock and
+  selects the runtime dependency wheels from it without including development
+  dependencies or uv in the runtime image.
 - The example hosts do not provide a real cluster API and must be replaced.
 - Authentication and TLS customization are unspecified by the API contract and are
   not modeled by these manifests.

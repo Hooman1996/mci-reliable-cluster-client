@@ -41,24 +41,8 @@ jobs:
           version: "0.12.11"
           enable-cache: true
 
-      # Bootstrap only while uv.lock is absent. The generated lock is uploaded
-      # from Python 3.12 for review; this workflow never commits it. Once the
-      # reviewed lock is committed, remove the generation branch and require
-      # `uv lock --check` unconditionally.
-      - name: Check or generate dependency lock
-        id: lock
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -f uv.lock ]]; then
-            echo "Dependency mode: checking committed uv.lock"
-            uv lock --check
-            echo "mode=checked" >> "$GITHUB_OUTPUT"
-          else
-            echo "Dependency mode: generating temporary uv.lock"
-            uv lock
-            echo "mode=generated" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Check committed dependency lock
+        run: uv lock --check
 
       - name: Synchronize all dependency groups
         run: uv sync --locked --all-groups
@@ -81,15 +65,6 @@ jobs:
           uv build
           test -n "$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
           test -n "$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
-
-      - name: Upload generated lock bootstrap
-        if: matrix.python-version == '3.12' && steps.lock.outputs.mode == 'generated'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: generated-uv-lock
-          path: uv.lock
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Upload Python distributions
         if: matrix.python-version == '3.12'

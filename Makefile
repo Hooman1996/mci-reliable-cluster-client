@@ -1,15 +1,17 @@
 PYTHON ?= python
+UV ?= uv
 IMAGE ?= mci-cluster-client:local
 DOCKER ?= docker
 KUBECTL ?= kubectl
 COVERAGE_ARGS ?= --cov=mci_cluster_client --cov-branch --cov-report=term-missing
 
-.PHONY: help format format-check lint typecheck test coverage verify cli-smoke \
+.PHONY: help lock-check format format-check lint typecheck test coverage verify cli-smoke \
 	docker-check docker-build docker-smoke k8s-render
 
 help: ## Show the available developer commands.
 	printf '%s\n' \
 		'help          Show the available developer commands.' \
+		'lock-check    Check uv.lock against pyproject.toml without network or installs.' \
 		'format        Format Python sources and tests with Ruff.' \
 		'format-check  Check formatting without changing files.' \
 		'lint          Run Ruff lint checks.' \
@@ -22,6 +24,9 @@ help: ## Show the available developer commands.
 		'docker-build  Build and load IMAGE (default: mci-cluster-client:local).' \
 		'docker-smoke  Inspect and smoke-test an already-built IMAGE offline.' \
 		'k8s-render    Render the Kubernetes manifests offline with Kustomize.'
+
+lock-check: ## Check the committed lock without network access or synchronization.
+	$(UV) lock --check --offline
 
 format: ## Format Python sources and tests with Ruff.
 	$(PYTHON) -m ruff format .

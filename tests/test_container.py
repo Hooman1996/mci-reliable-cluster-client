@@ -20,7 +20,26 @@ def test_runtime_stage_is_thin_non_root_and_safe_by_default() -> None:
     assert 'ENTRYPOINT ["mci-cluster"]' in runtime
     assert 'CMD ["--help"]' in runtime
     assert "HEALTHCHECK" not in dockerfile
-    assert all(package not in runtime for package in ("pytest", "coverage", "mypy", "ruff"))
+    assert all(
+        package not in runtime
+        for package in ("uv", "hatchling", "pytest", "coverage", "mypy", "ruff")
+    )
+
+
+def test_builder_requires_lock_and_collects_only_locked_runtime_dependencies() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    builder, runtime = dockerfile.split("FROM python:3.12-slim-bookworm AS runtime\n", maxsplit=1)
+
+    assert "COPY --from=ghcr.io/astral-sh/uv:0.12.11 /uv /usr/local/bin/uv" in builder
+    assert "COPY pyproject.toml uv.lock README.md ./" in builder
+    assert builder.index("COPY pyproject.toml uv.lock README.md ./") < builder.index(
+        "COPY src/ ./src/"
+    )
+    assert "uv lock --check" in builder
+    assert "uv export --locked --no-dev --no-emit-project --no-header" in builder
+    assert "--require-hashes --no-deps" in builder
+    assert "--requirement /runtime-requirements.txt" in builder
+    assert "uv" not in runtime
 
 
 def test_docker_context_excludes_non_runtime_material() -> None:
@@ -43,4 +62,4 @@ def test_docker_context_excludes_non_runtime_material() -> None:
         "dist",
         ".env",
     } <= ignored
-    assert {"Dockerfile", "pyproject.toml", "README.md", "src"}.isdisjoint(ignored)
+    assert {"Dockerfile", "pyproject.toml", "uv.lock", "README.md", "src"}.isdisjoint(ignored)

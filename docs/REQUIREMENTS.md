@@ -115,17 +115,17 @@ implementation evidence justifies a change.
 ## Repository deliverables
 
 The repository includes the production client, container definition, Kubernetes
-Job, CI workflow, unified developer commands, and their documentation. Dependency
-locking uses a temporary hosted-CI bootstrap until a reviewed lock is committed:
+Job, CI workflow, unified developer commands, and their documentation. The reviewed
+dependency lock is committed and mandatory:
 
 - **D-01 — Delivered:** Production client implementation and comprehensive unit
   test suite.
-- **D-02 — Bootstrap pending:** CI generates a temporary `uv.lock` from all
-  dependencies declared in `pyproject.toml` and uploads it for review without
-  committing it.
+- **D-02 — Delivered:** CI checks the committed `uv.lock` and synchronizes all
+  dependency groups in locked mode. The container exports its runtime-only
+  dependency set from the same lock and installs from an isolated wheel collection.
 - **D-03 — Delivered:** Multi-stage, non-root Dockerfile/Containerfile with useful
-  executable behavior; hosted CI is configured to perform the build and offline
-  smoke tests.
+  executable behavior; hosted CI completed the build and network-disabled,
+  hardened runtime smoke tests successfully.
 - **D-04 — Delivered:** Basic Kubernetes manifests appropriate to that executable.
 - **D-05 — Delivered:** GitHub Actions CI runs format check, lint, Mypy, unit tests,
   and branch coverage from a clean dependency installation.

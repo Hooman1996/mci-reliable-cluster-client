@@ -1,5 +1,7 @@
 # MCI Reliable Cluster Client
 
+[![CI](https://github.com/Hooman1996/mci-reliable-cluster-client/actions/workflows/ci.yml/badge.svg)](https://github.com/Hooman1996/mci-reliable-cluster-client/actions/workflows/ci.yml)
+
 A synchronous Python client and one-shot CLI that create or delete one group on
 every configured node of an unreliable REST API. The project implements an API
 consumer, not the remote cluster service.
@@ -24,15 +26,22 @@ python -m pip install .
 mci-cluster --help
 ```
 
-The only runtime dependency is `httpx`. Development dependencies are declared in
-`pyproject.toml` and can be installed into a uv-managed project environment with
-`uv sync --all-groups`.
+The only runtime dependency is `httpx`. The committed `uv.lock` is mandatory and
+records both runtime and development dependencies. Create an exact uv-managed
+development environment with:
+
+```text
+uv sync --locked --all-groups
+```
+
+`--locked` makes a missing or stale lockfile an error instead of changing it.
 
 ## Container image
 
-BuildKit builds the application wheel and every runtime dependency wheel in a
-builder stage, then installs only from that wheel collection into a clean Python
-3.12 slim Bookworm runtime stage:
+BuildKit uses the committed `uv.lock` to export the exact runtime-only dependency
+set, builds the application and dependency wheels in a builder stage, then installs
+only from that wheel collection with index access disabled in a clean Python 3.12
+slim Bookworm runtime stage:
 
 ```text
 docker buildx build --check .
@@ -95,9 +104,11 @@ docker run --rm --network none --read-only --cap-drop ALL \
 There is no `HEALTHCHECK`: this is a finite CLI/job rather than a service. For the
 same reason, the Kubernetes artifact is a `Job`, not a `Deployment`.
 
-Until a reviewed `uv.lock` is committed, the image resolves the bounded dependency
-constraints in `pyproject.toml` while building. The hosted workflow generates a
-temporary lock for review and does not modify the repository.
+The builder uses the official uv image at the intentionally pinned `0.12.11` tag.
+It checks that `uv.lock` agrees with `pyproject.toml` before exporting dependencies;
+a missing or stale lock therefore fails the build. uv, Hatchling, build tools,
+development dependencies, caches, tests, and the source checkout do not enter the
+runtime stage.
 
 ## Kubernetes Job
 
@@ -270,9 +281,10 @@ Create the development environment and run the quality gates from the repository
 root:
 
 ```bash
-uv sync --all-groups
-uv run make verify
-uv run make k8s-render
+uv sync --locked --all-groups
+make lock-check
+make verify
+make k8s-render
 ```
 
 All tests use scripted or stateful in-memory transports and block real socket
@@ -287,11 +299,12 @@ targets are separate so they can be run only when their runtimes are available.
 
 GitHub Actions runs on pushes to `main`, pull requests, and manual dispatches. Its
 Python matrix matches the declared support policy by testing 3.11 and 3.12. Every
-entry installs all declared dependency groups in an isolated CI environment and
-runs deterministic tests with branch coverage. Python 3.12 additionally gates Ruff
-formatting and lint, strict Mypy, offline CLI help/version smoke tests, and package
-construction. Successful 3.12 runs retain the wheel, source distribution, and
-coverage XML for seven days.
+entry first requires `uv lock --check`, then installs all declared dependency groups
+with `uv sync --locked --all-groups` in an isolated CI environment and runs
+deterministic tests with branch coverage. A missing or stale lockfile fails CI.
+Python 3.12 additionally gates Ruff formatting and lint, strict Mypy, offline CLI
+help/version smoke tests, and package construction. Successful 3.12 runs retain the
+wheel, source distribution, and coverage XML for seven days.
 
 The Docker job waits for the whole Python matrix, checks the Dockerfile with
 BuildKit, builds without publishing, and exercises only help/version commands with
@@ -303,12 +316,12 @@ other resource kinds, and checks key lifecycle, resource, and security fields. I
 does not configure a cluster or kubeconfig, apply resources, publish packages or
 images, use repository secrets, commit changes, or push changes.
 
-While `uv.lock` is absent, each Python job generates a temporary lock before running
-`uv sync --locked --all-groups`; the 3.12 job uploads it as the seven-day
-`generated-uv-lock` artifact. The workflow never commits that file. After the lock
-is reviewed and committed, the bootstrap branch can be removed and `uv lock --check`
-made unconditional. The first hosted run performs the full package build, container
-build and offline smoke tests, and Kubernetes render checks.
+The Docker build consumes the same committed lockfile as CI and fails when it does
+not match `pyproject.toml`. GitHub Actions run `34528722525` completed the full
+Docker build plus network-disabled and hardened runtime smoke suite successfully,
+along with both Python matrix entries, package construction, and offline Kubernetes
+render checks. The workflow verifies artifacts but does not publish packages or
+images.
 
 ## Repository layout
 

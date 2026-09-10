@@ -271,11 +271,16 @@ secrets.
 
 ## Delivery packaging
 
-The multi-stage Dockerfile packages the one-shot CLI as a numeric non-root user with
-`mci-cluster` as its entrypoint. The Kubernetes Kustomize base runs it as a single
-`batch/v1` Job, obtains only the non-secret node list from a ConfigMap, and supplies
-the action and group ID as arguments. No Service, controller, persistent storage,
-RBAC, or fabricated authentication resources are required.
+The multi-stage Dockerfile validates the committed `uv.lock`, exports only its
+locked runtime dependency set, collects hashed dependency wheels, and builds the
+project wheel in the builder. The clean runtime stage installs only from that wheel
+collection without index access and packages the one-shot CLI as a numeric non-root
+user with `mci-cluster` as its entrypoint. uv, build tooling, development
+dependencies, tests, and source are not copied into the runtime stage. The
+Kubernetes Kustomize base runs it as a single `batch/v1` Job, obtains only the
+non-secret node list from a ConfigMap, and supplies the action and group ID as
+arguments. No Service, controller, persistent storage, RBAC, or fabricated
+authentication resources are required.
 
 The Job has one completion and `backoffLimit: 0`: client-level read retries and Saga
 compensation are bounded, while an automatic whole-process retry could repeat a
@@ -283,7 +288,8 @@ mutation whose prior final state is indeterminate. Operators inspect the JSON re
 and Pod exit code before explicitly creating another Job. Pod and container security
 contexts match the non-root, read-only image design.
 
-CI is configured to verify Python 3.11 and 3.12, package construction, the container,
-offline CLI smoke paths, and an offline render of the Job. Until a reviewed
-dependency lock is committed, hosted CI generates and uploads a temporary lock
-without modifying the repository.
+CI requires the committed lock to match `pyproject.toml`, synchronizes all groups
+with locked mode, and verifies Python 3.11 and 3.12, package construction, the
+container, offline CLI smoke paths, and an offline render of the Job. The first
+hosted run completed the full image build and its network-disabled, hardened
+runtime smoke tests successfully.

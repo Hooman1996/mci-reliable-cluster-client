@@ -65,7 +65,7 @@ verification checks.
 | CLI output and status mapping | compact/pretty, success/no-op, rolled-back, indeterminate, and rollback-failure tests in `test_cli.py` | exactly one JSON report uses stable enum strings on stdout; diagnostics use stderr; exit is `0`, `3`, or `4` from actual report state |
 | CLI expected local failures | missing/malformed nodes, validation, argparse, and KeyboardInterrupt tests in `test_cli.py` | no report or traceback; stable exit `2` or `130`; no client/network call when configuration is invalid |
 | CLI execution methods/lifecycle | help/version tests, `test_execute_uses_context_manager_and_dispatches`, entrypoint tests, module smoke commands | installed and module entrypoints share the parser; client context always exits |
-| D-02 dependency reproducibility | CI lock bootstrap followed by `uv sync --locked --all-groups` | when absent, hosted CI generates and uploads `uv.lock` for review without committing it; a committed lock is checked instead |
+| D-02 dependency reproducibility | unconditional CI `uv lock --check` followed by `uv sync --locked --all-groups`; `test_container.py` locked-build assertions | a missing/stale lock fails CI and the Docker build; only the locked runtime graph is exported and collected for the runtime image |
 | Repository cleanliness | audit plus CI ignore check | no `.venv`, caches, credentials, build output, or modified references |
 
 ## Coverage interpretation
