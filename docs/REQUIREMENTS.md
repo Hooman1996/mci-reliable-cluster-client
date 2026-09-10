@@ -42,11 +42,12 @@ cluster nodes or their API.
 - **M-05 — Packaging:** Maintain the work as a Git repository and ultimately make
   it suitable for publication to GitHub. Creating the remote repository is outside
   this phase and requires explicit authorization.
-- **M-06 — Container:** Ultimately provide a Dockerfile or Containerfile for an
-  image that executes the client. This is deferred from the current bootstrap.
-- **M-07 — Kubernetes:** Ultimately provide basic Kubernetes manifests under
-  `manifests/` showing how the executable client is run. This is deferred from the
-  current bootstrap.
+- **M-06 — Container:** Provide a Dockerfile or Containerfile for an image that
+  executes the client. The multi-stage Dockerfile is delivered; runtime verification
+  remains blocked by official PyPI timeouts.
+- **M-07 — Kubernetes:** Provide basic Kubernetes manifests under `manifests/`
+  showing how the executable client is run. A secure, one-shot Job and its
+  ConfigMap/Kustomize base are delivered.
 - **M-08 — Quality:** Include reasonable code-quality measures. For this repository
   that includes formatting, linting, static typing, unit tests, and coverage.
 
@@ -121,16 +122,17 @@ implementation evidence justifies a change.
 
 ## Mandatory final repository requirements
 
-Stage 3 delivers D-01 plus the final README and one-shot CLI needed by later image
-work. Dependency locking was attempted but registry resolution was unavailable, so
-D-02 and the remaining delivery artifacts stay open:
+Stages 3 through 5 deliver the production client, container definition, Kubernetes
+Job, and their documentation. Dependency locking and runtime image verification
+remain unavailable because official registry resolution timed out:
 
 - **D-01 — Delivered:** Production client implementation and comprehensive unit
   test suite.
 - **D-02 — Pending:** Generate a reproducible `uv.lock` from all dependencies
   declared in `pyproject.toml`, without syncing the shared `faq` environment.
-- **D-03:** Dockerfile/Containerfile with useful executable behavior.
-- **D-04:** Basic Kubernetes manifests appropriate to that executable.
+- **D-03 — Delivered, runtime verification pending:** Multi-stage, non-root
+  Dockerfile/Containerfile with useful executable behavior.
+- **D-04 — Delivered:** Basic Kubernetes manifests appropriate to that executable.
 - **D-05:** GitHub Actions CI running format check, lint, mypy, unit tests, and
   coverage from a clean dependency installation.
 - **D-06 — Delivered:** Final README with runnable library and CLI instructions.
@@ -154,8 +156,9 @@ D-02 and the remaining delivery artifacts stay open:
 - No independent actor mutates the same `group_id` during one client operation.
   The client can serialize same-process calls, but the API supplies no mechanism
   to enforce this assumption across processes.
-- The one-shot CLI is the future container entrypoint; Kubernetes should model it as
-  a `Job`, not invent a long-running API service.
+- The one-shot CLI is the container entrypoint. Kubernetes models it as a `Job`,
+  not a long-running API service, and disables whole-Job retries for ambiguous
+  mutations.
 
 ## Unresolved specification ambiguities
 

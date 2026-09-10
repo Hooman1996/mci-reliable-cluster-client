@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mci-cluster-config
+  labels:
+    app.kubernetes.io/name: mci-cluster-client
+    app.kubernetes.io/component: cluster-operation
+    app.kubernetes.io/version: "0.1.0"
+data:
+  # EXAMPLE ONLY: replace every host before applying this manifest.
+  MCI_CLUSTER_NODES: "https://node1.example.com,https://node2.example.com,https://node3.example.com"

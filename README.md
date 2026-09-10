@@ -11,8 +11,8 @@ ambiguous mutations with bounded reads, and compensates attributable changes aft
 failure. Results are immutable, machine-readable operation reports.
 
 It does not provide a server, web UI, database, authentication scheme, durable Saga
-store, distributed lock, or background repair service. Kubernetes, CI, and GitHub
-publication remain separate delivery stages.
+store, distributed lock, or background repair service. CI and GitHub publication
+remain separate delivery stages.
 
 ## Installation
 
@@ -102,13 +102,39 @@ docker run --rm --network none --read-only --cap-drop ALL \
 ```
 
 There is no `HEALTHCHECK`: this is a finite CLI/job rather than a service. For the
-same reason, the later Kubernetes artifact will be a `Job`, not a `Deployment`.
+same reason, the Kubernetes artifact is a `Job`, not a `Deployment`.
 
 No `uv.lock` is currently committed because registry access timed out during the
 locking stage. The image therefore resolves the bounded dependency constraints in
 `pyproject.toml` while building. This is a temporary reproducibility limitation:
 the same Dockerfile can be adapted to consume a committed lock file once one can be
 generated against the official registry.
+
+## Kubernetes Job
+
+The basic deployment example under [`manifests/`](manifests/README.md) runs the
+finite CLI as a `Job`, not a continuously restarted Deployment. Its
+`backoffLimit: 0` prevents Kubernetes from repeating a potentially indeterminate
+mutation after the client's own bounded retries and compensation have finished.
+
+Render it offline before use, and replace the example hosts, group ID, and image:
+
+```text
+kubectl kustomize manifests
+```
+
+After reviewing those values, the operational lifecycle is:
+
+```text
+kubectl apply -k manifests
+kubectl logs job/mci-group-operation
+kubectl delete -k manifests
+```
+
+The image build is still blocked by official PyPI timeouts, so the Job cannot yet
+be run or loaded into kind. See the [manifest guide](manifests/README.md) for the
+client-side dry-run, wait/status commands, image replacement, kind workflow,
+security settings, and safe rerun guidance.
 
 ## Library usage
 
@@ -281,13 +307,15 @@ reference/                read-only original challenge sources
 pyproject.toml            package metadata, console command, tools, dependencies
 Dockerfile                multi-stage non-root executable image
 .dockerignore             minimal, secret-safe Docker build context
+manifests/                Kustomize base for the one-shot Kubernetes Job
 ```
 
-## Pending delivery artifacts
+## Delivery status
 
 - **Docker:** delivered as a multi-stage, non-root image using `mci-cluster` as its
   entrypoint and safe `--help` default.
-- **Kubernetes:** pending; the eventual one-shot workload should be modeled as a Job.
+- **Kubernetes:** delivered as a secure one-shot Job with offline Kustomize
+  validation and automatic retries disabled.
 - **CI and lock file:** pending until the later delivery stage and registry access.
 
 See [DESIGN.md](docs/DESIGN.md) for the exact state machine and

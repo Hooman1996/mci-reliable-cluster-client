@@ -271,10 +271,20 @@ secrets.
 - Nodes may diverge after a reported success because the remote system supplies no
   ongoing replication or consensus guarantee.
 
-## Later delivery design
+## Delivery packaging
 
-The implemented `src/` package includes the one-shot CLI. The future Docker image
-will execute `mci-cluster` as a non-root user. Kubernetes manifests should use a Job
-with node/action/group configuration and Secret references, not an invented service.
-GitHub Actions will install from the declared lock in a clean environment and run
-the five repository quality commands. Those delivery artifacts remain deferred.
+The multi-stage Dockerfile packages the one-shot CLI as a numeric non-root user with
+`mci-cluster` as its entrypoint. The Kubernetes Kustomize base runs it as a single
+`batch/v1` Job, obtains only the non-secret node list from a ConfigMap, and supplies
+the action and group ID as arguments. No Service, controller, persistent storage,
+RBAC, or fabricated authentication resources are required.
+
+The Job has one completion and `backoffLimit: 0`: client-level read retries and Saga
+compensation are bounded, while an automatic whole-process retry could repeat a
+mutation whose prior final state is indeterminate. Operators inspect the JSON report
+and Pod exit code before explicitly creating another Job. Pod and container security
+contexts match the non-root, read-only image design.
+
+CI and a reproducible dependency lock remain deferred. Runtime verification of the
+container and Job also remains pending because official PyPI dependency resolution
+timed out during the image build.

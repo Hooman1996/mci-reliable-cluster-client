@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mci-group-operation
+  labels:
+    app.kubernetes.io/name: mci-cluster-client
+    app.kubernetes.io/component: cluster-operation
+    app.kubernetes.io/version: "0.1.0"
+spec:
+  completions: 1
+  parallelism: 1
+  # The client owns bounded retries and compensation. Never automatically repeat
+  # a mutation whose final state may be indeterminate.
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mci-cluster-client
+        app.kubernetes.io/component: cluster-operation
+        app.kubernetes.io/version: "0.1.0"
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mci-cluster-client
+          image: mci-cluster-client:0.1.0
+          imagePullPolicy: IfNotPresent
+          # EXAMPLE ONLY: applying this Job attempts to create this group.
+          args: ["create", "example-group"]
+          env:
+            - name: MCI_CLUSTER_NODES
+              valueFrom:
+                configMapKeyRef:
+                  name: mci-cluster-config
+                  key: MCI_CLUSTER_NODES
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

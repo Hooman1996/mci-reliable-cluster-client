@@ -21,8 +21,8 @@ is explicitly marked as a later delivery check.
 | M-03 / D-06 README assumptions and usage | submission audit | README documents runnable library/CLI usage, assumptions, and limitations |
 | M-04 / R-16 no live services | autouse `block_real_network`, `ScriptedTransport.assert_done` | sockets fail immediately and every expected request is scripted |
 | M-05 Git repository | submission audit | repository metadata exists; remote publication remains authorization-dependent |
-| M-06 / D-03 executable image | later `test_container_metadata_and_cli_contract` plus static Docker audit | declared entrypoint invokes the client CLI without secrets/root |
-| M-07 / D-04 Kubernetes | later manifest schema/static assertions | Job uses configuration/Secret references and safe pod settings |
+| M-06 / D-03 executable image | `test_container.py` static audit; runtime checks pending registry access | declared entrypoint invokes the client CLI without secrets/root; runtime verification limitation is explicit |
+| M-07 / D-04 Kubernetes | offline `kubectl kustomize` structural audit; client dry-run where kubectl does not require API discovery | exactly one ConfigMap and one Job; secure non-root Pod; ConfigMap node reference; no automatic Job retry or workload execution during validation |
 | M-08 / D-05 quality gates | CI workflow plus local command audit | format, lint, mypy, pytest, and coverage commands run |
 | R-01 Saga, no ACID claim | rollback tests plus documentation audit | report distinguishes forward and compensation phases; docs disclaim ACID |
 | R-02 invalid group IDs | `test_invalid_group_ids_fail_without_network`, `test_valid_group_id_is_not_silently_stripped` | only non-string/empty/whitespace-only values fail; valid value remains exact |
