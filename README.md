@@ -317,11 +317,12 @@ does not configure a cluster or kubeconfig, apply resources, publish packages or
 images, use repository secrets, commit changes, or push changes.
 
 The Docker build consumes the same committed lockfile as CI and fails when it does
-not match `pyproject.toml`. GitHub Actions run `34528722525` completed the full
-Docker build plus network-disabled and hardened runtime smoke suite successfully,
-along with both Python matrix entries, package construction, and offline Kubernetes
-render checks. The workflow verifies artifacts but does not publish packages or
-images.
+not match `pyproject.toml`. Hosted CI
+([https://github.com/Hooman1996/mci-reliable-cluster-client/actions/workflows/ci.yml](https://github.com/Hooman1996/mci-reliable-cluster-client/actions/workflows/ci.yml))
+verifies the committed lock, Python 3.11 and 3.12, package construction, the locked
+Docker build, network-disabled hardened container smoke tests, and offline
+Kubernetes rendering. The workflow verifies artifacts but does not publish
+packages or images.
 
 ## Repository layout
 

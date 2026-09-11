@@ -290,6 +290,5 @@ contexts match the non-root, read-only image design.
 
 CI requires the committed lock to match `pyproject.toml`, synchronizes all groups
 with locked mode, and verifies Python 3.11 and 3.12, package construction, the
-container, offline CLI smoke paths, and an offline render of the Job. The first
-hosted run completed the full image build and its network-disabled, hardened
-runtime smoke tests successfully.
+container, offline CLI smoke paths, and an offline render of the Job. Hosted CI
+builds the image and runs its network-disabled, hardened runtime smoke tests.

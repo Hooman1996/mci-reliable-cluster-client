@@ -168,9 +168,10 @@ dependency lock is committed and mandatory:
 - The challenge asks to deploy a client but does not define invocation arguments,
   scheduling, exit codes, or whether Kubernetes should run a Job or Deployment.
 - The challenge does not specify Python versions, package/import name, coverage
-  threshold, license, or publication visibility. This implementation supports and
+  threshold, repository visibility, or a license. This implementation supports and
   tests Python 3.11 and 3.12, uses import name `mci_cluster_client`, and requires 95%
-  branch-aware coverage; license and publication visibility remain unresolved.
+  branch-aware coverage. The delivered repository is public at the requester's
+  direction; no license has been selected.
 
 ## Optional enhancements
 
